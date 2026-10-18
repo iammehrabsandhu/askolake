@@ -328,3 +328,30 @@ func TestFuseLowValuePenalty(t *testing.T) {
 		t.Fatalf("low value = %+v", got)
 	}
 }
+
+// Product-only questions ("What is OLake?") get the overview sections first;
+// any other question is untouched.
+func TestOverviewPinsProductOnlyQuestions(t *testing.T) {
+	chunks := fixtureChunks()
+	chunks[2].URL = "https://olake.io/docs/fusion/getting-started/overview/#what-is-olake-fusion"
+	chunks[3].URL = "https://olake.io/docs/#what-is-olake-go"
+	d := loadData(t)
+	r := NewRetriever(NewPrep(d), chunks, NewKeyword(chunks), nil, NewErrors(chunks), d.Deprecated)
+	r.SetOverview(data.Overview{Terms: []string{"olake", "olake fusion"}, Pages: map[domain.Product][]string{
+		domain.ProductOLake:  {"/docs/#what-is-olake-go"},
+		domain.ProductFusion: {"/fusion/getting-started/overview/#what-is-olake-fusion"},
+	}})
+	for q, want := range map[string]int{"What is OLake?": 3, "Tell me about OLake": 3, "What is OLake Fusion?": 2} {
+		ret := r.Retrieve(context.Background(), r.Prep().Prepare(q), nil)
+		if len(ret.Hits) == 0 || ret.Hits[0].ChunkID != want {
+			t.Errorf("%q: hits %+v, want chunk %d first", q, ret.Hits, want)
+		}
+	}
+	ret := r.Retrieve(context.Background(), r.Prep().Prepare("kafka brokers"), nil)
+	if len(ret.Hits) > 0 && ret.Hits[0].ChunkID == 3 {
+		t.Fatalf("non product-only question pinned: %+v", ret.Hits)
+	}
+	if got := pinFirst([]domain.Hit{{ChunkID: 1}, {ChunkID: 3}}, []int{3}, 2); len(got) != 2 || got[0].ChunkID != 3 || got[1].ChunkID != 1 {
+		t.Fatalf("pinFirst = %+v", got)
+	}
+}

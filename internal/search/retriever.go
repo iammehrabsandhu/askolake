@@ -2,12 +2,15 @@ package search
 
 import (
 	"context"
+	"math"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 
 	"olake-ask/internal/data"
 	"olake-ask/internal/domain"
 	"olake-ask/internal/tuning"
+	"olake-ask/internal/utils"
 )
 
 // Retriever runs all searchers and fuses their results.
@@ -18,6 +21,13 @@ type Retriever struct {
 	vector     domain.Searcher // nil if off
 	errs       *Errors
 	deprecated []data.Deprecated
+	overview   overview
+}
+
+// overview pins product overview sections for product-only questions.
+type overview struct {
+	terms map[string]bool          // tokens of the product names
+	pages map[domain.Product][]int // chunk IDs in listed order
 }
 
 // Retrieval is the fused outcome of one retrieval pass.
@@ -33,6 +43,44 @@ type Retrieval struct {
 // NewRetriever wires the searchers. vector may be nil.
 func NewRetriever(prep *Prep, chunks []domain.Chunk, keyword *Keyword, vector domain.Searcher, errs *Errors, deprecated []data.Deprecated) *Retriever {
 	return &Retriever{prep: prep, chunks: chunks, keyword: keyword, vector: vector, errs: errs, deprecated: deprecated}
+}
+
+// SetOverview configures the overview sections for product-only questions
+// (sources.yaml overview). Without it, no sections are pinned.
+func (r *Retriever) SetOverview(o data.Overview) {
+	r.overview = overview{terms: map[string]bool{}, pages: map[domain.Product][]int{}}
+	for _, t := range o.Terms {
+		for _, tok := range utils.Tokenize(t) {
+			r.overview.terms[tok] = true
+		}
+	}
+	for prod, subs := range o.Pages {
+		for _, sub := range subs {
+			for _, c := range r.chunks {
+				if strings.Contains(c.URL, sub) {
+					r.overview.pages[prod] = append(r.overview.pages[prod], c.ID)
+				}
+			}
+		}
+	}
+}
+
+// overviewFor returns the overview chunk IDs when every content term of q
+// is a product-name token ("What is OLake?"), else nil.
+func (r *Retriever) overviewFor(q domain.Query) []int {
+	if len(q.Content) == 0 || len(r.overview.terms) == 0 {
+		return nil
+	}
+	prod := domain.ProductOLake
+	for _, t := range q.Content {
+		if !r.overview.terms[t] {
+			return nil
+		}
+		if t == "fusion" {
+			prod = domain.ProductFusion
+		}
+	}
+	return r.overview.pages[prod]
 }
 
 // Retrieve searches with q plus any extra (rewritten) query strings.
@@ -99,7 +147,29 @@ func (r *Retriever) Retrieve(ctx context.Context, q domain.Query, extra []string
 		}
 	}
 	ret.Hits = Fuse(lists, r.chunks, q, tuning.Candidates, r.deprecated)
+	if pins := r.overviewFor(q); len(pins) > 0 {
+		ret.Hits = pinFirst(ret.Hits, pins, tuning.Candidates)
+	}
 	return ret
+}
+
+// pinFirst puts the pinned chunks first (in order), then the other hits.
+func pinFirst(hits []domain.Hit, pins []int, limit int) []domain.Hit {
+	out := make([]domain.Hit, 0, limit)
+	seen := map[int]bool{}
+	for _, id := range pins {
+		if !seen[id] && len(out) < limit {
+			seen[id] = true
+			out = append(out, domain.Hit{ChunkID: id, Score: math.Inf(1)})
+		}
+	}
+	for _, h := range hits {
+		if !seen[h.ChunkID] && len(out) < limit {
+			seen[h.ChunkID] = true
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // Prep returns the query preparer.

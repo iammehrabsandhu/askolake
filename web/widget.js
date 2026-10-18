@@ -121,12 +121,13 @@
 
     var html = [], para = [], list = null;
     function flushPara() { if (para.length) { html.push("<p>" + para.join("<br>") + "</p>"); para = []; } }
-    function flushList() { if (list) { html.push("<" + list.tag + ">" + list.items.join("") + "</" + list.tag + ">"); list = null; } }
+    // An ordered list split by a code block or a line keeps its numbering (start="N").
+    function flushList() { if (list) { var start = list.start > 1 ? ' start="' + list.start + '"' : ""; html.push("<" + list.tag + start + ">" + list.items.join("") + "</" + list.tag + ">"); list = null; } }
     t.split("\n").forEach(function (line) {
       var m;
       if (/^\u0000B\d+\u0000$/.test(line.trim())) { flushPara(); flushList(); html.push(line.trim()); return; }
       if ((m = line.match(/^\s*[-*]\s+(.*)$/))) { flushPara(); if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; } list.items.push("<li>" + m[1] + "</li>"); return; }
-      if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) { flushPara(); if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [] }; } list.items.push("<li>" + m[1] + "</li>"); return; }
+      if ((m = line.match(/^\s*(\d+)\.\s+(.*)$/))) { flushPara(); if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [], start: +m[1] }; } list.items.push("<li>" + m[2] + "</li>"); return; }
       if ((m = line.match(/^#{1,6}\s+(.*)$/))) { flushPara(); flushList(); html.push("<p><strong>" + m[1] + "</strong></p>"); return; }
       if (!line.trim()) { flushPara(); flushList(); return; }
       flushList();

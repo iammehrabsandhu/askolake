@@ -13,7 +13,7 @@ func TestLoadEmbedded(t *testing.T) {
 	if len(d.Sources.Repos) != 4 || d.Sources.Repos[2].ValuesYAML[0] != "helm/olake/values.yaml" {
 		t.Fatalf("repos: %+v", d.Sources.Repos)
 	}
-	if len(d.Sources.External) != 10 || d.Sources.External[0].Product != "" || len(d.Sources.LowValue) != 3 {
+	if len(d.Sources.External) != 10 || d.Sources.External[0].Product != "" || len(d.Sources.LowValue) != 3 || len(d.Sources.Overview.Pages["olake"]) != 3 || len(d.Sources.Overview.Terms) == 0 {
 		t.Fatalf("external: %+v", d.Sources.External)
 	}
 	if len(d.Synonyms) != 27 || d.Products.Default != "olake" || len(d.Products.QueryTerms["fusion"]) == 0 {

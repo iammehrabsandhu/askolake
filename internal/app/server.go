@@ -51,7 +51,9 @@ func NewRetriever(ctx context.Context, cfg config.Server, d data.Data, b index.B
 	case local != nil:
 		vec = local
 	}
-	return search.NewRetriever(search.NewPrep(d), b.Chunks, search.NewKeyword(b.Chunks), vec, search.NewErrors(b.Chunks), d.Deprecated)
+	r := search.NewRetriever(search.NewPrep(d), b.Chunks, search.NewKeyword(b.Chunks), vec, search.NewErrors(b.Chunks), d.Deprecated)
+	r.SetOverview(d.Sources.Overview)
+	return r
 }
 
 // VectorModels describes the vector search in use, for logs: the API model

@@ -34,6 +34,15 @@ type Sources struct {
 	// question but answer none (generic "about OLake" text); they are
 	// down-ranked, not removed.
 	LowValue []string `yaml:"low_value"`
+	// Overview lists the sections that answer product-only questions.
+	Overview Overview `yaml:"overview"`
+}
+
+// Overview: a question whose content words are all Terms ("What is OLake?",
+// "Tell me about OLake Fusion") gets Pages[product] first in its context.
+type Overview struct {
+	Terms []string                    `yaml:"terms"`
+	Pages map[domain.Product][]string `yaml:"pages"`
 }
 
 // Docs configures the docs sitemap crawl.
@@ -185,6 +194,14 @@ func (d Data) validate() error {
 	}
 	for _, x := range s.LowValue {
 		nonEmpty("sources.low_value", x)
+	}
+	for _, x := range s.Overview.Terms {
+		nonEmpty("sources.overview.terms", x)
+	}
+	for p, pages := range s.Overview.Pages {
+		for _, x := range pages {
+			nonEmpty("sources.overview.pages."+string(p), x)
+		}
 	}
 	url("sources.community.slack", s.Community.Slack)
 	url("sources.community.issues", s.Community.Issues)

@@ -62,3 +62,11 @@ low_value:
   - /docs/community/contributing/#orientation
   - /docs/community/learning-modules/
   - /blog/olake-architecture-deep-dive/#wrapping-up
+# Questions whose only content words are product names ("What is OLake?",
+# "Tell me about OLake Fusion") carry no other search signal; these overview
+# sections go first in their context (fusion when the question says fusion).
+overview:
+  terms: [olake, olake go, go, fusion, olake fusion]
+  pages:
+    olake: [/docs/#what-is-olake-go, /docs/#supported-sources, /docs/#destinations]
+    fusion: [/docs/fusion/getting-started/overview/#what-is-olake-fusion]
