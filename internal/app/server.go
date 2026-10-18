@@ -162,6 +162,10 @@ func NewLLM(cfg config.Server) *middleware.Budget {
 	default:
 		c := client.NewOpenAI(cfg.LLMBaseURL, cfg.LLMAPIKey)
 		c.SetDebug(debug)
+		c.SetFallbackModels(cfg.LLMFallbackModels)
+		if cfg.LLMReasoning != "default" {
+			c.SetReasoningEffort(cfg.LLMReasoning)
+		}
 		llm = c
 	}
 	return middleware.NewBudget(llm, cfg.DailyTokenBudget)

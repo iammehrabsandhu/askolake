@@ -14,10 +14,14 @@ import (
 // Server is the configuration of cmd/server and cmd/eval.
 type Server struct {
 	LLMProvider      string // openai_compatible | anthropic
-	LLMBaseURL       string // resolved (anthropic default applied)
+	LLMBaseURL       string // resolved (OpenRouter / Anthropic default applied)
 	LLMModel         string
 	LLMFallbackModel string
-	LLMAPIKey        string
+	// OpenRouter `models` list: tried in order inside the same call if
+	// LLMModel errors (LLM_FALLBACK_MODELS, comma-separated).
+	LLMFallbackModels []string
+	LLMReasoning      string // OpenRouter reasoning effort; "default" = don't send the field
+	LLMAPIKey         string
 
 	EmbedBaseURL string
 	EmbedAPIKey  string
@@ -65,8 +69,12 @@ func (s Seeder) CohereEnabled() bool {
 const (
 	defaultOrigins      = "https://olake.io,http://localhost:*,http://127.0.0.1:*"
 	defaultAnthropicURL = "https://api.anthropic.com"
-	defaultCohereURL    = "https://api.cohere.com/v2"
-	defaultEmbedModel   = "RETRIEVAL32M"
+	// OpenRouter defaults for openai_compatible: only LLM_API_KEY is needed.
+	defaultOpenAIURL      = "https://openrouter.ai/api/v1"
+	defaultOpenAIModel    = "z-ai/glm-4.7-flash"
+	defaultFallbackModels = "google/gemini-2.5-flash-lite,deepseek/deepseek-v4.1-flash"
+	defaultCohereURL      = "https://api.cohere.com/v2"
+	defaultEmbedModel     = "RETRIEVAL32M"
 )
 
 // embedAPI reads EMBED_API and EMBED_API_BASE_URL (shared by server and seeder).
@@ -91,15 +99,30 @@ func LoadServer() (Server, error) {
 	if s.LLMProvider, err = oneOf("LLM_PROVIDER", "openai_compatible", "openai_compatible", "anthropic"); err != nil {
 		return s, err
 	}
+	openAI := s.LLMProvider == "openai_compatible"
 	s.LLMBaseURL = env("LLM_BASE_URL", "")
-	if s.LLMBaseURL == "" && s.LLMProvider == "anthropic" {
+	if s.LLMBaseURL == "" {
 		s.LLMBaseURL = defaultAnthropicURL
+		if openAI {
+			s.LLMBaseURL = defaultOpenAIURL
+		}
 	}
 	if s.LLMBaseURL != "" && !isHTTP(s.LLMBaseURL) {
 		return s, fmt.Errorf("LLM_BASE_URL: %q is not an http(s) URL", s.LLMBaseURL)
 	}
 	s.LLMModel = env("LLM_MODEL", "")
+	fallbacks := env("LLM_FALLBACK_MODELS", "")
+	if openAI {
+		s.LLMModel = env("LLM_MODEL", defaultOpenAIModel)
+		fallbacks = env("LLM_FALLBACK_MODELS", defaultFallbackModels)
+	}
+	if fallbacks != "none" {
+		s.LLMFallbackModels = splitList(fallbacks)
+	}
 	s.LLMFallbackModel = env("LLM_FALLBACK_MODEL", "")
+	if s.LLMReasoning, err = oneOf("LLM_REASONING_EFFORT", "none", "none", "minimal", "low", "medium", "high", "xhigh", "default"); err != nil {
+		return s, err
+	}
 	s.LLMAPIKey = env("LLM_API_KEY", "")
 
 	s.EmbedBaseURL = env("EMBED_BASE_URL", "")
@@ -180,6 +203,17 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// splitList splits a comma list, dropping blanks.
+func splitList(raw string) []string {
+	var out []string
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func oneOf(key, def string, allowed ...string) (string, error) {

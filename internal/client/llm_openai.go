@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"olake-ask/internal/domain"
 	"olake-ask/internal/tuning"
@@ -15,20 +16,27 @@ import (
 
 var errEmptyCompletion = errors.New("empty completion")
 
-// OpenAI is an OpenAI-compatible /chat/completions client (domain.LLM).
+// OpenAI is an OpenAI-compatible /chat/completions client (domain.LLM). It
+// speaks OpenRouter's extensions too: a `models` fallback list and
+// `reasoning` effort.
 type OpenAI struct {
-	c       *http.Client
-	url     string
-	headers map[string]string
-	debug   io.Writer // non-nil: print each request body (DEBUG=on)
+	c         *http.Client
+	url       string
+	headers   map[string]string
+	debug     io.Writer // non-nil: print each request body (DEBUG=on)
+	fallbacks []string  // OpenRouter `models`: tried in order if req.Model fails
+	effort    string    // OpenRouter `reasoning.effort`; "" = omit
+	// noEffort is set once a request succeeded only without `reasoning`, so
+	// later requests stop sending it.
+	noEffort atomic.Bool
 }
 
-// NewOpenAI returns a client for baseURL (e.g. https://api.groq.com/openai/v1).
+// NewOpenAI returns a client for baseURL (e.g. https://openrouter.ai/api/v1).
 func NewOpenAI(baseURL, apiKey string) *OpenAI {
 	return &OpenAI{
 		c:       NewHTTPClient(),
 		url:     strings.TrimRight(baseURL, "/") + "/chat/completions",
-		headers: map[string]string{"Authorization": "Bearer " + apiKey},
+		headers: map[string]string{"Authorization": "Bearer " + strings.TrimSpace(apiKey)},
 	}
 }
 
@@ -37,14 +45,21 @@ type oaMessage struct {
 	Content string `json:"content"`
 }
 
+type oaReasoning struct {
+	Effort string `json:"effort"`
+}
+
 type oaRequest struct {
-	Model       string      `json:"model"`
-	Messages    []oaMessage `json:"messages"`
-	Temperature float64     `json:"temperature"`
-	MaxTokens   int         `json:"max_tokens"`
+	Model       string       `json:"model"`
+	Models      []string     `json:"models,omitempty"`
+	Messages    []oaMessage  `json:"messages"`
+	Temperature float64      `json:"temperature"`
+	MaxTokens   int          `json:"max_tokens"`
+	Reasoning   *oaReasoning `json:"reasoning,omitempty"`
 }
 
 type oaResponse struct {
+	Model   string `json:"model"` // the model that actually answered (after fallbacks)
 	Choices []struct {
 		Message struct {
 			Content json.RawMessage `json:"content"`
@@ -54,23 +69,48 @@ type oaResponse struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
+	Error *struct {
+		Code    any    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 // SetDebug prints every outgoing request body to w (nil disables).
 func (o *OpenAI) SetDebug(w io.Writer) { o.debug = w }
 
+// SetFallbackModels sends models as OpenRouter's `models` list: if the
+// primary model errors, OpenRouter tries these in order within the same call.
+func (o *OpenAI) SetFallbackModels(models []string) { o.fallbacks = models }
+
+// SetReasoningEffort sends `reasoning: {effort}` (e.g. "none" for faster,
+// cheaper answers). If a model rejects it, the request is retried without it.
+func (o *OpenAI) SetReasoningEffort(effort string) { o.effort = effort }
+
 // Complete implements domain.LLM.
 func (o *OpenAI) Complete(ctx context.Context, req domain.LLMRequest) (domain.LLMResponse, error) {
 	body := oaRequest{
 		Model:       req.Model,
+		Models:      o.fallbacks,
 		Messages:    []oaMessage{{Role: "system", Content: req.System}, {Role: "user", Content: req.User}},
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 	}
-	var resp oaResponse
-	printRequest(o.debug, http.MethodPost, o.url, body)
-	if _, err := DoJSON(ctx, o.c, http.MethodPost, o.url, o.headers, body, &resp, tuning.LLMRetries); err != nil {
-		return domain.LLMResponse{}, fmt.Errorf("openai-compatible: %w", err)
+	if o.effort != "" && !o.noEffort.Load() {
+		body.Reasoning = &oaReasoning{Effort: o.effort}
+	}
+	resp, err := o.post(ctx, body)
+	var he *HTTPError
+	if body.Reasoning != nil && errors.As(err, &he) && (he.Status == http.StatusBadRequest || he.Status == http.StatusUnprocessableEntity) {
+		body.Reasoning = nil
+		if resp, err = o.post(ctx, body); err == nil {
+			o.noEffort.Store(true)
+		}
+	}
+	if err != nil {
+		return domain.LLMResponse{}, fmt.Errorf("openai-compatible: %w", withHint(err))
+	}
+	if resp.Error != nil && len(resp.Choices) == 0 {
+		return domain.LLMResponse{}, fmt.Errorf("openai-compatible: provider error %v: %s", resp.Error.Code, resp.Error.Message)
 	}
 	if len(resp.Choices) == 0 {
 		return domain.LLMResponse{}, fmt.Errorf("openai-compatible: %w", errEmptyCompletion)
@@ -79,7 +119,38 @@ func (o *OpenAI) Complete(ctx context.Context, req domain.LLMRequest) (domain.LL
 	if text == "" {
 		return domain.LLMResponse{}, fmt.Errorf("openai-compatible: %w", errEmptyCompletion)
 	}
+	if o.debug != nil && resp.Model != "" {
+		fmt.Fprintf(o.debug, "LLM ANSWERED BY  %s\n", resp.Model)
+	}
 	return domain.LLMResponse{Text: text, InTokens: resp.Usage.PromptTokens, OutTokens: resp.Usage.CompletionTokens}, nil
+}
+
+func (o *OpenAI) post(ctx context.Context, body oaRequest) (oaResponse, error) {
+	var resp oaResponse
+	printRequest(o.debug, http.MethodPost, o.url, body)
+	_, err := DoJSON(ctx, o.c, http.MethodPost, o.url, o.headers, body, &resp, tuning.LLMRetries)
+	return resp, err
+}
+
+// withHint adds what to do for the statuses OpenRouter documents as
+// non-retryable (429 and 5xx are already retried by DoJSON).
+func withHint(err error) error {
+	var he *HTTPError
+	if !errors.As(err, &he) {
+		return err
+	}
+	var hint string
+	switch he.Status {
+	case http.StatusUnauthorized:
+		hint = "API key missing, wrong or disabled: check LLM_API_KEY"
+	case http.StatusPaymentRequired:
+		hint = "not enough credit left on the API key"
+	case http.StatusForbidden:
+		hint = "model not allowed on this key (check LLM_MODEL / LLM_FALLBACK_MODELS spelling) or credit limit used up"
+	default:
+		return err
+	}
+	return fmt.Errorf("%w (%s)", err, hint)
 }
 
 // contentText accepts a string or an array of {type,text} parts.

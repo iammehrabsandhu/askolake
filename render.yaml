@@ -16,6 +16,10 @@ services:
         sync: false
       - key: LLM_FALLBACK_MODEL
         sync: false
+      - key: LLM_FALLBACK_MODELS
+        sync: false
+      - key: LLM_REASONING_EFFORT
+        value: none
       - key: REWRITE
         value: "off"
       - key: RERANK

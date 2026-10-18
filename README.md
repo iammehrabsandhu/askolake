@@ -94,9 +94,11 @@ and never overrides real variables). See `.env.example`.
 |---|---|---|---|---|
 | `LLM_API_KEY` | – | secret | server, eval | empty → permanent `search_only` |
 | `LLM_PROVIDER` | `openai_compatible` | `openai_compatible`, `anthropic` | server | |
-| `LLM_BASE_URL` | `""` | URL | server | required for `openai_compatible` (e.g. `https://api.groq.com/openai/v1`); `anthropic` defaults to `https://api.anthropic.com` |
-| `LLM_MODEL` | `""` | string | server | required for the LLM to be enabled |
+| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | URL | server | `anthropic` defaults to `https://api.anthropic.com` |
+| `LLM_MODEL` | `z-ai/glm-4.7-flash` | string | server | default applies to `openai_compatible` only; required for `anthropic` |
 | `LLM_FALLBACK_MODEL` | `""` | string | server | tried once if the answer call fails |
+| `LLM_FALLBACK_MODELS` | `google/gemini-2.5-flash-lite,deepseek/deepseek-v4.1-flash` | comma list, `none` | server | OpenRouter `models` field: tried in order within the same call if `LLM_MODEL` errors (`openai_compatible` only) |
+| `LLM_REASONING_EFFORT` | `none` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `default` | server | OpenRouter `reasoning.effort`; `default` omits it; dropped automatically if a model rejects it |
 | `GITHUB_TOKEN` | – | secret | seeder | optional; unauthenticated runs cap issue comments at 50 |
 | `EMBEDDER` | `model2vec` | `model2vec`, `api`, `none` | seeder | the server follows the bundle manifest |
 | `EMBED_MODEL` | `RETRIEVAL32M` | go-potion model or API model name | seeder | the server follows the bundle manifest |
@@ -143,13 +145,13 @@ Rebuild or restart the server after `make seed`: the bundle is compiled into the
 ## Deploy
 
 **Render.** `render.yaml` describes a Docker web service on the free plan with `/healthz` as its health
-check. Create a Blueprint from the repository, then set the secrets the file leaves unsynced:
-`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` and optionally `LLM_FALLBACK_MODEL`. The Dockerfile builds a
+check. Create a Blueprint from the repository, then set `LLM_API_KEY`; the LLM settings default to
+OpenRouter, so `LLM_BASE_URL`, `LLM_MODEL` and `LLM_FALLBACK_MODELS` are only needed to override. The Dockerfile builds a
 static binary, pre-downloads the embedding model named in the bundle manifest (`cmd/fetchmodel`) and
 ships both on `distroless/static`, so the container needs no network at startup.
 
 ```bash
-make docker && docker run -p 8080:8080 -e LLM_API_KEY=… -e LLM_BASE_URL=… -e LLM_MODEL=… olake-ask
+make docker && docker run -p 8080:8080 -e LLM_API_KEY=… olake-ask
 ```
 
 **Docusaurus widget.** Add the script to `docusaurus.config.js`:

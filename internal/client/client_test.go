@@ -91,6 +91,87 @@ func TestOpenAIEmpty(t *testing.T) {
 	}
 }
 
+func TestOpenAIOpenRouterFields(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)
+		io.WriteString(w, `{"model":"b","choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+	o := NewOpenAI(srv.URL, "k")
+	if _, err := o.Complete(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["models"]; ok {
+		t.Fatalf("models sent without fallbacks: %v", body)
+	}
+	if _, ok := body["reasoning"]; ok {
+		t.Fatalf("reasoning sent without effort: %v", body)
+	}
+	o.SetFallbackModels([]string{"b", "c"})
+	o.SetReasoningEffort("none")
+	if _, err := o.Complete(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	models, _ := body["models"].([]any)
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if body["model"] != "m" || len(models) != 2 || models[0] != "b" || reasoning["effort"] != "none" {
+		t.Fatalf("body = %v", body)
+	}
+}
+
+func TestOpenAIDropsRejectedReasoning(t *testing.T) {
+	var withReasoning, without atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if _, ok := body["reasoning"]; ok {
+			withReasoning.Add(1)
+			http.Error(w, `{"error":{"message":"reasoning not supported"}}`, http.StatusBadRequest)
+			return
+		}
+		without.Add(1)
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+	o := NewOpenAI(srv.URL, "k")
+	o.SetReasoningEffort("none")
+	for i := 0; i < 2; i++ {
+		if resp, err := o.Complete(context.Background(), req); err != nil || resp.Text != "ok" {
+			t.Fatalf("resp=%+v err=%v", resp, err)
+		}
+	}
+	if withReasoning.Load() != 1 || without.Load() != 2 {
+		t.Fatalf("with=%d without=%d, want 1 and 2 (field dropped after first rejection)", withReasoning.Load(), without.Load())
+	}
+}
+
+func TestOpenAIErrorHints(t *testing.T) {
+	for status, want := range map[int]string{401: "LLM_API_KEY", 402: "credit", 403: "model not allowed"} {
+		var calls atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			http.Error(w, "no", status)
+		}))
+		_, err := NewOpenAI(srv.URL, "k").Complete(context.Background(), req)
+		srv.Close()
+		var he *HTTPError
+		if !errors.As(err, &he) || he.Status != status || !strings.Contains(err.Error(), want) || calls.Load() != 1 {
+			t.Errorf("%d: err=%v calls=%d", status, err, calls.Load())
+		}
+	}
+}
+
+func TestOpenAIBodyError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"error":{"code":502,"message":"provider down"}}`)
+	}))
+	defer srv.Close()
+	if _, err := NewOpenAI(srv.URL, "k").Complete(context.Background(), req); err == nil || !strings.Contains(err.Error(), "provider down") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestAnthropic(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

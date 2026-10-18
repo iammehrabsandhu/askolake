@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-var serverVars = []string{"LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_FALLBACK_MODEL", "LLM_API_KEY",
+var serverVars = []string{"LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODELS", "LLM_REASONING_EFFORT", "LLM_API_KEY",
 	"EMBED_BASE_URL", "EMBED_API_KEY", "VECTOR_BACKEND", "REWRITE", "RERANK", "DAILY_TOKEN_BUDGET",
 	"ALLOWED_ORIGINS", "PORT", "DEBUG", "EMBEDDER", "EMBED_MODEL", "SEED_ISSUES", "GITHUB_TOKEN",
 	"EMBED_API", "EMBED_API_MODEL", "EMBED_API_DIM", "EMBED_API_BASE_URL"}
@@ -27,7 +27,9 @@ func TestServerDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s.LLMProvider != "openai_compatible" || s.VectorBackend != "memory" || s.Rewrite != "off" || s.Rerank ||
-		s.DailyTokenBudget != 5000000 || s.Port != 8080 || s.LLMEnabled() || s.Debug {
+		s.DailyTokenBudget != 5000000 || s.Port != 8080 || s.LLMEnabled() || s.Debug ||
+		s.LLMReasoning != "none" || s.LLMBaseURL != defaultOpenAIURL || s.LLMModel != defaultOpenAIModel ||
+		!reflect.DeepEqual(s.LLMFallbackModels, []string{"google/gemini-2.5-flash-lite", "deepseek/deepseek-v4.1-flash"}) {
 		t.Fatalf("unexpected defaults: %+v", s)
 	}
 	want := []string{"https://olake.io", "http://localhost:*", "http://127.0.0.1:*"}
@@ -39,29 +41,48 @@ func TestServerDefaults(t *testing.T) {
 func TestServerLLMEnabled(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("LLM_API_KEY", "k")
-	t.Setenv("LLM_MODEL", "m")
 	s, _ := LoadServer()
-	if s.LLMEnabled() {
-		t.Fatal("openai_compatible without base URL must be disabled")
+	if !s.LLMEnabled() {
+		t.Fatalf("openai_compatible with only a key must use the OpenRouter defaults: %+v", s)
 	}
 	t.Setenv("LLM_PROVIDER", "anthropic")
+	s, _ = LoadServer()
+	if s.LLMEnabled() || s.LLMFallbackModels != nil {
+		t.Fatalf("anthropic must not inherit OpenRouter model defaults: %+v", s)
+	}
+	t.Setenv("LLM_MODEL", "m")
 	s, _ = LoadServer()
 	if !s.LLMEnabled() || s.LLMBaseURL != defaultAnthropicURL {
 		t.Fatalf("anthropic default base: %+v", s)
 	}
 }
 
+func TestServerFallbackModels(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("LLM_FALLBACK_MODELS", " google/gemini-2.5-flash-lite, ,deepseek/deepseek-v4.1-flash ")
+	s, err := LoadServer()
+	want := []string{"google/gemini-2.5-flash-lite", "deepseek/deepseek-v4.1-flash"}
+	if err != nil || !reflect.DeepEqual(s.LLMFallbackModels, want) {
+		t.Fatalf("models = %v err = %v", s.LLMFallbackModels, err)
+	}
+	t.Setenv("LLM_FALLBACK_MODELS", "none")
+	if s, _ = LoadServer(); s.LLMFallbackModels != nil {
+		t.Fatalf("none must disable fallbacks: %v", s.LLMFallbackModels)
+	}
+}
+
 func TestServerInvalid(t *testing.T) {
 	cases := map[string]string{
-		"LLM_PROVIDER":       "gemini",
-		"VECTOR_BACKEND":     "qdrant",
-		"REWRITE":            "sometimes",
-		"RERANK":             "yes",
-		"DAILY_TOKEN_BUDGET": "-1",
-		"PORT":               "abc",
-		"ALLOWED_ORIGINS":    "https://*.olake.io",
-		"LLM_BASE_URL":       "ftp://x",
-		"DEBUG":              "true",
+		"LLM_PROVIDER":         "gemini",
+		"VECTOR_BACKEND":       "qdrant",
+		"REWRITE":              "sometimes",
+		"RERANK":               "yes",
+		"DAILY_TOKEN_BUDGET":   "-1",
+		"PORT":                 "abc",
+		"ALLOWED_ORIGINS":      "https://*.olake.io",
+		"LLM_BASE_URL":         "ftp://x",
+		"DEBUG":                "true",
+		"LLM_REASONING_EFFORT": "max",
 	}
 	for k, v := range cases {
 		clearEnv(t)
