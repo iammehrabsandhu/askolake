@@ -1,0 +1,14 @@
+<!doctype html><html><head><title>Maintenance | Apache Iceberg</title></head>
+<body><header><nav>Top nav</nav></header>
+<main>
+<h1>Maintenance</h1>
+<p>Iceberg tables need periodic maintenance to stay fast.</p>
+<h2 id="expire-snapshots">Expire Snapshots</h2>
+<p>Each write creates a new snapshot. Expiring old snapshots removes data files that are no longer needed.</p>
+<pre><code class="language-sql">CALL catalog.system.expire_snapshots('db.tbl');</code></pre>
+<h3><a name="orphans"></a>Delete orphan files</h3>
+<ul><li>Run <code>remove_orphan_files</code> regularly.</li><li>Use a safe <b>older_than</b> value.</li></ul>
+<footer>footer text</footer>
+</main>
+<aside>sidebar</aside>
+</body></html>
