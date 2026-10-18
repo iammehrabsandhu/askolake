@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "20261018T0639Z-99ea6cd4",
-  "built_at": "2026-10-18T06:39:02.976839Z",
+  "version": "20261018T0844Z-151df019",
+  "built_at": "2026-10-18T08:44:11.680986Z",
   "repos": {
     "olake": "d20c68ed98ced12293cd621ac04136a946ba4290",
     "olake-fusion": "15ca160b298bf038f78f6639ec7aae67e4d4e33a",
@@ -12,9 +12,10 @@
     "code": 1544,
     "docs": 1264,
     "external": 131,
+    "issue": 156,
     "repo": 575
   },
-  "chunks": 3514,
+  "chunks": 3670,
   "identifiers": [
     "Speed",
     "Synced Records",
@@ -693,6 +694,6 @@
     "provider": "model2vec",
     "model": "RETRIEVAL32M",
     "dim": 512,
-    "pieces": 4546
+    "pieces": 4863
   }
 }
