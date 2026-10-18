@@ -67,7 +67,7 @@ func (s Seeder) CohereEnabled() bool {
 }
 
 const (
-	defaultOrigins      = "https://olake.io,http://localhost:*,http://127.0.0.1:*"
+	defaultOrigins      = "*" // every origin, so the widget works on any site
 	defaultAnthropicURL = "https://api.anthropic.com"
 	// OpenRouter defaults for openai_compatible: only LLM_API_KEY is needed.
 	defaultOpenAIURL      = "https://openrouter.ai/api/v1"
@@ -123,7 +123,8 @@ func LoadServer() (Server, error) {
 	if s.LLMReasoning, err = oneOf("LLM_REASONING_EFFORT", "none", "none", "minimal", "low", "medium", "high", "xhigh", "default"); err != nil {
 		return s, err
 	}
-	s.LLMAPIKey = env("LLM_API_KEY", "")
+	// OPENROUTER_API_KEY is the documented name; LLM_API_KEY still works.
+	s.LLMAPIKey = env("OPENROUTER_API_KEY", env("LLM_API_KEY", ""))
 
 	s.EmbedBaseURL = env("EMBED_BASE_URL", "")
 	if s.EmbedBaseURL != "" && !isHTTP(s.EmbedBaseURL) {
@@ -255,6 +256,10 @@ func parseOrigins(raw string) ([]string, error) {
 		if o == "" {
 			continue
 		}
+		if o == "*" {
+			out = append(out, o) // any origin
+			continue
+		}
 		check := o
 		if strings.Contains(o, "*") {
 			if !strings.HasSuffix(o, ":*") || strings.Count(o, "*") != 1 {
@@ -272,6 +277,24 @@ func parseOrigins(raw string) ([]string, error) {
 		return nil, errors.New("ALLOWED_ORIGINS: no origins configured")
 	}
 	return out, nil
+}
+
+// Version returns the live commit and deployment, read from the platform's
+// environment at call time (Vercel names first, then Render's). Render has
+// no deploy-ID variable, so its service ID stands in: it is stable per
+// service, unlike RENDER_INSTANCE_ID, which changes whenever the free
+// instance wakes up.
+func Version() (commit, deployment string) {
+	return firstEnv("VERCEL_GIT_COMMIT_SHA", "RENDER_GIT_COMMIT"), firstEnv("VERCEL_DEPLOYMENT_ID", "RENDER_SERVICE_ID")
+}
+
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // LoadDotEnv loads KEY=VALUE lines from path when it exists. Blank lines and

@@ -11,7 +11,8 @@ import (
 var serverVars = []string{"LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL", "LLM_FALLBACK_MODEL", "LLM_FALLBACK_MODELS", "LLM_REASONING_EFFORT", "LLM_API_KEY",
 	"EMBED_BASE_URL", "EMBED_API_KEY", "VECTOR_BACKEND", "REWRITE", "RERANK", "DAILY_TOKEN_BUDGET",
 	"ALLOWED_ORIGINS", "PORT", "DEBUG", "EMBEDDER", "EMBED_MODEL", "SEED_ISSUES", "GITHUB_TOKEN",
-	"EMBED_API", "EMBED_API_MODEL", "EMBED_API_DIM", "EMBED_API_BASE_URL"}
+	"EMBED_API", "EMBED_API_MODEL", "EMBED_API_DIM", "EMBED_API_BASE_URL",
+	"OPENROUTER_API_KEY", "VERCEL_GIT_COMMIT_SHA", "VERCEL_DEPLOYMENT_ID", "RENDER_GIT_COMMIT", "RENDER_SERVICE_ID"}
 
 func clearEnv(t *testing.T) {
 	t.Helper()
@@ -32,7 +33,7 @@ func TestServerDefaults(t *testing.T) {
 		!reflect.DeepEqual(s.LLMFallbackModels, []string{"google/gemini-2.5-flash-lite", "deepseek/deepseek-v4.1-flash"}) {
 		t.Fatalf("unexpected defaults: %+v", s)
 	}
-	want := []string{"https://olake.io", "http://localhost:*", "http://127.0.0.1:*"}
+	want := []string{"*"}
 	if !reflect.DeepEqual(s.AllowedOrigins, want) {
 		t.Fatalf("origins = %v", s.AllowedOrigins)
 	}
@@ -193,5 +194,36 @@ func TestEmbedAPIConfig(t *testing.T) {
 		if _, err := LoadServer(); err == nil || !strings.Contains(err.Error(), k) {
 			t.Errorf("server %s=%s: err = %v", k, v, err)
 		}
+	}
+}
+
+func TestOpenRouterKeyAndVersion(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("LLM_API_KEY", "legacy")
+	if s, _ := LoadServer(); s.LLMAPIKey != "legacy" {
+		t.Fatalf("LLM_API_KEY fallback: %q", s.LLMAPIKey)
+	}
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	if s, _ := LoadServer(); s.LLMAPIKey != "or-key" {
+		t.Fatalf("OPENROUTER_API_KEY must win: %q", s.LLMAPIKey)
+	}
+	t.Setenv("ALLOWED_ORIGINS", "*")
+	if s, err := LoadServer(); err != nil || len(s.AllowedOrigins) != 1 || s.AllowedOrigins[0] != "*" {
+		t.Fatalf("ALLOWED_ORIGINS=*: %v %v", s.AllowedOrigins, err)
+	}
+
+	// Version is read at call time: Vercel names first, then Render's.
+	if c, d := Version(); c != "" || d != "" {
+		t.Fatalf("empty env: %q %q", c, d)
+	}
+	t.Setenv("RENDER_GIT_COMMIT", "abc123")
+	t.Setenv("RENDER_SERVICE_ID", "srv-1")
+	if c, d := Version(); c != "abc123" || d != "srv-1" {
+		t.Fatalf("render: %q %q", c, d)
+	}
+	t.Setenv("VERCEL_GIT_COMMIT_SHA", "vc")
+	t.Setenv("VERCEL_DEPLOYMENT_ID", "dpl_1")
+	if c, d := Version(); c != "vc" || d != "dpl_1" {
+		t.Fatalf("vercel: %q %q", c, d)
 	}
 }

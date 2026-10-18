@@ -11,10 +11,10 @@ const (
 	MaxBodyBytes     = 16 << 10
 	MaxQuestionChars = 2000
 	MinQuestionChars = 3
-	RatePerIPPerMin  = 10
-	RateBurst        = 5
-	GlobalRatePerMin = 120
-	GlobalRateBurst  = 20
+	RatePerIPPerMin  = 60
+	RateBurst        = 30
+	GlobalRatePerMin = 600
+	GlobalRateBurst  = 100
 	CacheSize        = 1000
 	CacheTTL         = 24 * time.Hour
 
@@ -32,13 +32,13 @@ const (
 	Temperature          = 0.1
 	TimeoutRewrite       = 4 * time.Second
 	TimeoutRerank        = 5 * time.Second
-	TimeoutAnswer        = 30 * time.Second
+	TimeoutAnswer        = 20 * time.Second
 	TimeoutQueryEmbed    = 2 * time.Second
 	TimeoutQueryEmbedAPI = 1500 * time.Millisecond // shorter: a failure falls back to local vectors
-	RequestTimeout       = 45 * time.Second
+	RequestTimeout       = 25 * time.Second        // answers stay under 30 s (scoring limit); the LLM call gets TimeoutAnswer
+	TimeoutModels        = 10 * time.Second
 	LLMRetries           = 1
-	MaxConcurrentLLM     = 4
-
+	MaxConcurrentLLM     = 16
 	CrawlConcurrency     = 4
 	CrawlDelay           = 250 * time.Millisecond
 	FetchTimeout         = 20 * time.Second

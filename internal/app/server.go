@@ -144,6 +144,15 @@ func newQueryEmbedder(ctx context.Context, cfg config.Server, e domain.EmbedInfo
 	return nil, fmt.Errorf("unknown embedder provider %q", e.Provider)
 }
 
+// modelLister lists the models the OpenRouter key can use, or nil when no
+// OpenAI-compatible LLM is configured.
+func modelLister(cfg config.Server) func(context.Context) ([]string, error) {
+	if cfg.LLMProvider != "openai_compatible" || cfg.LLMAPIKey == "" || cfg.LLMBaseURL == "" {
+		return nil
+	}
+	return client.NewOpenAI(cfg.LLMBaseURL, cfg.LLMAPIKey).ListModels
+}
+
 // NewLLM returns the budget-wrapped LLM, or nil when the LLM is not configured.
 func NewLLM(cfg config.Server) *middleware.Budget {
 	if !cfg.LLMEnabled() {
@@ -246,6 +255,8 @@ func NewServer(ctx context.Context, cfg config.Server, d data.Data, b index.Bund
 		AllowedOrigins: cfg.AllowedOrigins,
 		RateLimiter:    middleware.NewRateLimiter(ctx),
 		Logger:         logger,
+		Version:        config.Version,
+		Models:         modelLister(cfg),
 	})
 	if err != nil {
 		return nil, err

@@ -96,6 +96,7 @@ func Logger(log *slog.Logger) gin.HandlerFunc {
 // OriginMatcher matches Origin headers against ALLOWED_ORIGINS entries
 // (exact, or scheme://host:* for any port).
 type OriginMatcher struct {
+	any      bool // "*": every origin
 	exact    map[string]bool
 	anyPorts map[string]bool // "scheme://host"
 }
@@ -105,6 +106,10 @@ func NewOriginMatcher(origins []string) *OriginMatcher {
 	m := &OriginMatcher{exact: map[string]bool{}, anyPorts: map[string]bool{}}
 	for _, o := range origins {
 		o = strings.ToLower(strings.TrimRight(o, "/"))
+		if o == "*" {
+			m.any = true
+			continue
+		}
 		if base, ok := strings.CutSuffix(o, ":*"); ok {
 			m.anyPorts[base] = true
 		} else {
@@ -120,7 +125,7 @@ func (m *OriginMatcher) Allowed(origin string) bool {
 	if origin == "" {
 		return false
 	}
-	if m.exact[origin] {
+	if m.any || m.exact[origin] {
 		return true
 	}
 	u, err := url.Parse(origin)
@@ -137,7 +142,11 @@ func CORS(m *OriginMatcher) gin.HandlerFunc {
 		c.Writer.Header().Add("Vary", "Origin")
 		if m.Allowed(origin) {
 			h := c.Writer.Header()
-			h.Set("Access-Control-Allow-Origin", origin)
+			allow := origin
+			if m.any {
+				allow = "*"
+			}
+			h.Set("Access-Control-Allow-Origin", allow)
 			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
 			h.Set("Access-Control-Max-Age", "600")

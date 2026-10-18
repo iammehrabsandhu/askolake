@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,14 +20,23 @@ func (f fakeAnswerer) Answer(context.Context, string) domain.Result { return f.r
 
 func router(t *testing.T, res domain.Result) http.Handler {
 	t.Helper()
+	return routerWith(t, res, nil)
+}
+
+func routerWith(t *testing.T, res domain.Result, edit func(*Options)) http.Handler {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	r, err := NewRouter(Options{
+	o := Options{
 		Answerer:       fakeAnswerer{res: res},
 		Health:         HealthResponse{IndexVersion: "v1", Chunks: 3, Vectors: true},
 		AllowedOrigins: []string{"https://olake.io"},
 		RateLimiter:    middleware.NewRateLimiter(ctx),
-	})
+	}
+	if edit != nil {
+		edit(&o)
+	}
+	r, err := NewRouter(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,5 +128,43 @@ func TestHealthRootWidgetNotFound(t *testing.T) {
 	}
 	if w := do(h, http.MethodOptions, "/ask", ""); w.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS = %d", w.Code)
+	}
+}
+
+func TestVersionModelsDemo(t *testing.T) {
+	calls := 0
+	h := routerWith(t, domain.Result{}, func(o *Options) {
+		o.Version = func() (string, string) { calls++; return "abc", "dpl" }
+		o.Models = func(context.Context) ([]string, error) { return []string{"m1", "m2"}, nil }
+	})
+	w := do(h, http.MethodGet, "/version", "")
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"commit":"abc","deployment":"dpl"}` {
+		t.Fatalf("version: %d %s", w.Code, w.Body.String())
+	}
+	do(h, http.MethodGet, "/version", "")
+	if calls != 2 {
+		t.Fatalf("version must be read per request, calls=%d", calls)
+	}
+	w = do(h, http.MethodGet, "/models", "")
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"models":["m1","m2"]}` {
+		t.Fatalf("models: %d %s", w.Code, w.Body.String())
+	}
+	w = do(h, http.MethodGet, "/demo", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `src="/widget.js"`) || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("demo: %d %s", w.Code, w.Header())
+	}
+
+	// Not configured / provider error.
+	h = routerWith(t, domain.Result{}, func(o *Options) {
+		o.Models = func(context.Context) ([]string, error) { return nil, errors.New("401") }
+	})
+	if w := do(h, http.MethodGet, "/models", ""); w.Code != http.StatusBadGateway {
+		t.Fatalf("models error: %d", w.Code)
+	}
+	if w := do(h, http.MethodGet, "/version", ""); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"commit":"","deployment":""}` {
+		t.Fatalf("version without func: %s", w.Body.String())
+	}
+	if w := do(router(t, domain.Result{}), http.MethodGet, "/models", ""); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("models unconfigured: %d", w.Code)
 	}
 }

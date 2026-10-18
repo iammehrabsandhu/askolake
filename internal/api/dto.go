@@ -25,3 +25,14 @@ type HealthResponse struct {
 	Vectors      bool   `json:"vectors"`
 	LLM          bool   `json:"llm"`
 }
+
+// VersionResponse is GET /version.
+type VersionResponse struct {
+	Commit     string `json:"commit"`
+	Deployment string `json:"deployment"`
+}
+
+// ModelsResponse is GET /models.
+type ModelsResponse struct {
+	Models []string `json:"models"`
+}

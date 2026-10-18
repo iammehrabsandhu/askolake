@@ -23,6 +23,10 @@ type Options struct {
 	AllowedOrigins []string
 	RateLimiter    *middleware.RateLimiter
 	Logger         *slog.Logger
+	// Version returns the live commit and deployment (read per request).
+	Version func() (commit, deployment string)
+	// Models lists the LLM model IDs the API key can use (nil = not configured).
+	Models func(ctx context.Context) ([]string, error)
 }
 
 // NewRouter builds the Gin engine with all routes.
@@ -38,7 +42,7 @@ func NewRouter(o Options) (*gin.Engine, error) {
 	}
 	r.Use(middleware.RequestID(), middleware.Recover(), middleware.Logger(logger), middleware.CORS(middleware.NewOriginMatcher(o.AllowedOrigins)))
 
-	h := &handler{answerer: o.Answerer, health: o.Health}
+	h := &handler{answerer: o.Answerer, health: o.Health, version: o.Version, models: o.Models}
 	h.health.Status = "ok"
 
 	r.POST("/ask", middleware.BodyLimit(tuning.MaxBodyBytes), o.RateLimiter.Middleware(), h.ask)
@@ -48,6 +52,9 @@ func NewRouter(o Options) (*gin.Engine, error) {
 	r.GET("/", h.root)
 	r.HEAD("/", h.root)
 	r.GET("/widget.js", widget)
+	r.GET("/demo", demo)
+	r.GET("/version", h.versionInfo)
+	r.GET("/models", h.modelList)
 	r.GET("/ping", ping)
 	r.HEAD("/ping", ping)
 	r.NoRoute(func(c *gin.Context) { c.JSON(http.StatusNotFound, ErrorResponse{Error: "not found"}) })
@@ -57,6 +64,40 @@ func NewRouter(o Options) (*gin.Engine, error) {
 type handler struct {
 	answerer domain.Answerer
 	health   HealthResponse
+	version  func() (string, string)
+	models   func(context.Context) ([]string, error)
+}
+
+// versionInfo reports which commit and deployment are live.
+func (h *handler) versionInfo(c *gin.Context) {
+	var v VersionResponse
+	if h.version != nil {
+		v.Commit, v.Deployment = h.version()
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, v)
+}
+
+// modelList returns the model IDs the provider lists for our API key.
+func (h *handler) modelList(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.models == nil {
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "LLM not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), tuning.TimeoutModels)
+	defer cancel()
+	ids, err := h.models(ctx)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: "could not list models from the LLM provider"})
+		return
+	}
+	c.JSON(http.StatusOK, ModelsResponse{Models: ids})
+}
+
+func demo(c *gin.Context) {
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", web.DemoHTML)
 }
 
 func (h *handler) ask(c *gin.Context) {

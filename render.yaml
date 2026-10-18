@@ -12,7 +12,7 @@ services:
         sync: false
       - key: LLM_MODEL
         sync: false
-      - key: LLM_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
       - key: LLM_FALLBACK_MODEL
         sync: false
@@ -27,7 +27,7 @@ services:
       - key: DAILY_TOKEN_BUDGET
         value: "5000000"
       - key: ALLOWED_ORIGINS
-        value: https://olake.io,http://localhost:*,http://127.0.0.1:*
+        value: "*"
       - key: VECTOR_BACKEND
         value: memory
       - key: EMBED_API

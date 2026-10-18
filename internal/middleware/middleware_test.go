@@ -249,3 +249,18 @@ func TestClientIP(t *testing.T) {
 		t.Fatal(ClientIP(c))
 	}
 }
+
+func TestCORSAnyOrigin(t *testing.T) {
+	r := gin.New()
+	r.Use(CORS(NewOriginMatcher([]string{"*"})))
+	r.POST("/ask", func(c *gin.Context) { c.Status(http.StatusOK) })
+	for _, origin := range []string{"https://any.example", "null"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodOptions, "/ask", nil)
+		req.Header.Set("Origin", origin)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "*" {
+			t.Fatalf("origin %q: code=%d acao=%q", origin, w.Code, w.Header().Get("Access-Control-Allow-Origin"))
+		}
+	}
+}

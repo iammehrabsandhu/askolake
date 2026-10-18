@@ -15,7 +15,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8081", "listen address")
-	api := flag.String("api", "http://localhost:8080", "API URL shown in the printed demo link")
+	api := flag.String("api", "https://askolake.onrender.com", "API URL shown in the printed demo link (local server: -api http://localhost:8080)")
 	flag.Parse()
 
 	port := *addr

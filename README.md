@@ -92,7 +92,7 @@ and never overrides real variables). See `.env.example`.
 
 | Var | Default | Allowed | Used by | Notes |
 |---|---|---|---|---|
-| `LLM_API_KEY` | – | secret | server, eval | empty → permanent `search_only` |
+| `OPENROUTER_API_KEY` | – | secret | server, eval | empty → permanent `search_only`; `LLM_API_KEY` is read if unset |
 | `LLM_PROVIDER` | `openai_compatible` | `openai_compatible`, `anthropic` | server | |
 | `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | URL | server | `anthropic` defaults to `https://api.anthropic.com` |
 | `LLM_MODEL` | `z-ai/glm-4.7-flash` | string | server | default applies to `openai_compatible` only; required for `anthropic` |
@@ -111,7 +111,7 @@ and never overrides real variables). See `.env.example`.
 | `REWRITE` | `off` | `off`, `when_needed`, `always` | server | extra LLM call |
 | `RERANK` | `off` | `off`, `on` | server | extra LLM call |
 | `DAILY_TOKEN_BUDGET` | `5000000` | int ≥ 0 | server | `0` = unlimited; resets at 00:00 UTC |
-| `ALLOWED_ORIGINS` | `https://olake.io,http://localhost:*,http://127.0.0.1:*` | comma list, `:*` port wildcard | server | CORS |
+| `ALLOWED_ORIGINS` | `*` | `*` (any origin) or comma list, `:*` port wildcard | server | CORS |
 | `SEED_ISSUES` | `on` | `on`, `off` | seeder | |
 | `PORT` | `8080` | int | server | Render sets it |
 | `DEBUG` | `off` | `on`, `off` | server, eval | `on` prints every outgoing LLM request (method, URL, indented JSON body) to the terminal; headers and API keys are never printed. For local runs only. |
@@ -145,14 +145,18 @@ Rebuild or restart the server after `make seed`: the bundle is compiled into the
 ## Deploy
 
 **Render.** `render.yaml` describes a Docker web service on the free plan with `/healthz` as its health
-check. Create a Blueprint from the repository, then set `LLM_API_KEY`; the LLM settings default to
+check. Create a Blueprint from the repository, then set `OPENROUTER_API_KEY`; the LLM settings default to
 OpenRouter, so `LLM_BASE_URL`, `LLM_MODEL` and `LLM_FALLBACK_MODELS` are only needed to override. The Dockerfile builds a
 static binary, pre-downloads the embedding model named in the bundle manifest (`cmd/fetchmodel`) and
 ships both on `distroless/static`, so the container needs no network at startup.
 
 ```bash
-make docker && docker run -p 8080:8080 -e LLM_API_KEY=… olake-ask
+make docker && docker run -p 8080:8080 -e OPENROUTER_API_KEY=… olake-ask
 ```
+
+Routes: `POST /ask`, `GET /version` (live commit and deployment from `VERCEL_GIT_COMMIT_SHA`/`RENDER_GIT_COMMIT`
+and `VERCEL_DEPLOYMENT_ID`/`RENDER_SERVICE_ID`, read per request), `GET /models` (model IDs OpenRouter lists
+for the key, fetched live), `GET /demo` (widget demo page), `GET /widget.js`, `GET /healthz`, `GET /ping`.
 
 **Docusaurus widget.** Add the script to `docusaurus.config.js`:
 
@@ -162,8 +166,8 @@ scripts: [{src: 'https://<host>/widget.js', defer: true}],
 
 The widget calls the API on the script's own origin (override with `data-api-url`, and the title with
 `data-title`). It follows Docusaurus' `data-theme` for light and dark mode, renders into a shadow DOM so
-site CSS can't leak in, and escapes all server text before rendering. Add the docs origin to
-`ALLOWED_ORIGINS`.
+site CSS can't leak in, and escapes all server text before rendering. CORS allows every origin by
+default (`ALLOWED_ORIGINS=*`).
 
 ## Refreshing content
 

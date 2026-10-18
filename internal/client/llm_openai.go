@@ -75,6 +75,27 @@ type oaResponse struct {
 	} `json:"error"`
 }
 
+// ListModels returns the model IDs OpenRouter lists for this key
+// (GET <base>/models/user); OpenRouter filters them by the key's restrictions.
+func (o *OpenAI) ListModels(ctx context.Context) ([]string, error) {
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	u := strings.TrimSuffix(o.url, "/chat/completions") + "/models/user"
+	if _, err := DoJSON(ctx, o.c, http.MethodGet, u, o.headers, nil, &resp, 0); err != nil {
+		return nil, fmt.Errorf("list models: %w", err)
+	}
+	ids := make([]string, 0, len(resp.Data))
+	for _, m := range resp.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
 // SetDebug prints every outgoing request body to w (nil disables).
 func (o *OpenAI) SetDebug(w io.Writer) { o.debug = w }
 

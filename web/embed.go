@@ -7,3 +7,8 @@ import _ "embed"
 //
 //go:embed widget.js
 var WidgetJS []byte
+
+// DemoHTML is the page served at /demo: the widget talking to this server.
+//
+//go:embed demo.html
+var DemoHTML []byte

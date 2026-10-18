@@ -394,3 +394,16 @@ func TestCoherePacing(t *testing.T) {
 		t.Fatal("cancelled context must stop pacing")
 	}
 }
+
+func TestListModels(t *testing.T) {
+	var path, auth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, auth = r.URL.Path, r.Header.Get("Authorization")
+		io.WriteString(w, `{"data":[{"id":"z-ai/glm-4.7-flash"},{"id":"google/gemini-2.5-flash-lite"},{"id":""}]}`)
+	}))
+	defer srv.Close()
+	ids, err := NewOpenAI(srv.URL+"/api/v1", "k").ListModels(context.Background())
+	if err != nil || len(ids) != 2 || ids[0] != "z-ai/glm-4.7-flash" || path != "/api/v1/models/user" || auth != "Bearer k" {
+		t.Fatalf("ids=%v err=%v path=%s auth=%s", ids, err, path, auth)
+	}
+}

@@ -6,5 +6,5 @@ vet:         ; go vet ./...
 fmt:         ; gofmt -s -w .
 eval:        ; go run ./cmd/eval -mode retrieval
 eval-full:   ; go run ./cmd/eval -mode full
-demo:        ; go run ./cmd/demo -api $${API:-http://localhost:8080}
+demo:        ; go run ./cmd/demo -api $${API:-https://askolake.onrender.com}
 docker:      ; docker build -t olake-ask .
