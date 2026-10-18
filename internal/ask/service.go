@@ -118,7 +118,7 @@ func (s *Service) Answer(ctx context.Context, q string) domain.Result {
 	}
 
 	// Selection (+ optional rerank).
-	sel := ret.Hits[:min(tuning.TopK, len(ret.Hits))]
+	sel := ret.Hits[:min(tuning.TopK+ret.Extra, len(ret.Hits))]
 	if s.rerank {
 		cands := s.chunks(ret.Hits)
 		rctx, cancel := context.WithTimeout(ctx, tuning.TimeoutRerank)
@@ -180,6 +180,9 @@ func (s *Service) Answer(ctx context.Context, q string) domain.Result {
 func BelowFloor(ret search.Retrieval, vectorsOn bool) bool {
 	if len(ret.Hits) == 0 {
 		return true
+	}
+	if ret.MentionsProduct {
+		return false // questions naming OLake or Fusion always reach the LLM
 	}
 	floor := ret.CosineFloor
 	if floor == 0 {

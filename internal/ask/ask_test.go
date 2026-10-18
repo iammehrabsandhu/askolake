@@ -333,4 +333,7 @@ func TestBelowFloorPerModel(t *testing.T) {
 	if BelowFloor(search.Retrieval{Hits: []domain.Hit{{}}, ErrHits: 1}, true) {
 		t.Error("error match must pass the floor")
 	}
+	if BelowFloor(search.Retrieval{Hits: []domain.Hit{{}}, MaxCoverage: 0.1, MentionsProduct: true}, true) {
+		t.Error("questions naming the product must reach the LLM")
+	}
 }

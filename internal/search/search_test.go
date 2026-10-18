@@ -355,3 +355,35 @@ func TestOverviewPinsProductOnlyQuestions(t *testing.T) {
 		t.Fatalf("pinFirst = %+v", got)
 	}
 }
+
+func TestEnsureInTopAndMentionsProduct(t *testing.T) {
+	hits := []domain.Hit{{ChunkID: 1}, {ChunkID: 2}, {ChunkID: 3}, {ChunkID: 4}}
+	if got, extra := ensureInTop(hits, 2, 3); len(got) != 4 || got[1].ChunkID != 2 || extra != 0 {
+		t.Fatalf("already in top: %+v %d", got, extra)
+	}
+	if got, extra := ensureInTop(hits, 4, 2); len(got) != 4 || got[2].ChunkID != 4 || got[1].ChunkID != 2 || extra != 1 {
+		t.Fatalf("moved to slot k+1: %+v %d", got, extra)
+	}
+	if got, extra := ensureInTop(hits, 9, 2); len(got) != 5 || got[2].ChunkID != 9 || extra != 1 {
+		t.Fatalf("inserted at k+1: %+v %d", got, extra)
+	}
+
+	chunks := fixtureChunks()
+	chunks[3].URL = "https://olake.io/docs/#what-is-olake-go"
+	d := loadData(t)
+	r := NewRetriever(NewPrep(d), chunks, NewKeyword(chunks), nil, NewErrors(chunks), d.Deprecated)
+	r.SetOverview(data.Overview{Terms: []string{"olake", "fusion"}, Pages: map[domain.Product][]string{domain.ProductOLake: {"/docs/#what-is-olake-go"}}})
+	ret := r.Retrieve(context.Background(), r.Prep().Prepare("why is olake better for kafka"), nil)
+	found := false
+	for i, h := range ret.Hits {
+		if h.ChunkID == 3 && i < tuning.TopK+ret.Extra {
+			found = true
+		}
+	}
+	if !ret.MentionsProduct || !found {
+		t.Fatalf("mentions=%v overview in top-K=%v hits=%+v", ret.MentionsProduct, found, ret.Hits)
+	}
+	if ret := r.Retrieve(context.Background(), r.Prep().Prepare("weather in paris"), nil); ret.MentionsProduct {
+		t.Fatal("no product named")
+	}
+}

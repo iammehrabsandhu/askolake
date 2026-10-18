@@ -16,7 +16,7 @@ func TestLoadEmbedded(t *testing.T) {
 	if len(d.Sources.External) != 10 || d.Sources.External[0].Product != "" || len(d.Sources.LowValue) != 3 || len(d.Sources.Overview.Pages["olake"]) != 3 || len(d.Sources.Overview.Terms) == 0 {
 		t.Fatalf("external: %+v", d.Sources.External)
 	}
-	if len(d.Synonyms) != 27 || d.Products.Default != "olake" || len(d.Products.QueryTerms["fusion"]) == 0 {
+	if len(d.Synonyms) != 28 || d.Products.Default != "olake" || len(d.Products.QueryTerms["fusion"]) == 0 {
 		t.Fatalf("synonyms/products: %d %+v", len(d.Synonyms), d.Products)
 	}
 	if len(d.Deprecated) != 5 || d.Deprecated[0].Term != "wal2json" {

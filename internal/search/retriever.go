@@ -38,6 +38,12 @@ type Retrieval struct {
 	MaxCosine   float64 // best cosine of the vector list with the most headroom over its floor
 	CosineFloor float64 // floor that applies to MaxCosine (0 = tuning.FloorCosine)
 	ErrHits     int
+	// MentionsProduct: the question names a product (sources.yaml overview
+	// terms). Such questions always reach the LLM (see ask.BelowFloor).
+	MentionsProduct bool
+	// Extra is how many passages beyond tuning.TopK the LLM should get
+	// (1 when the product overview was added after the top TopK).
+	Extra int
 }
 
 // NewRetriever wires the searchers. vector may be nil.
@@ -65,22 +71,29 @@ func (r *Retriever) SetOverview(o data.Overview) {
 	}
 }
 
-// overviewFor returns the overview chunk IDs when every content term of q
-// is a product-name token ("What is OLake?"), else nil.
-func (r *Retriever) overviewFor(q domain.Query) []int {
+// overviewFor reports whether q names a product, the overview chunk IDs
+// for that product, and whether q is product-only (every content term is a
+// product name, "go" counting as part of "OLake Go").
+func (r *Retriever) overviewFor(q domain.Query) (mentions bool, pages []int, only bool) {
 	if len(q.Content) == 0 || len(r.overview.terms) == 0 {
-		return nil
+		return false, nil, false
 	}
-	prod := domain.ProductOLake
+	prod, only := domain.ProductOLake, true
 	for _, t := range q.Content {
-		if !r.overview.terms[t] {
-			return nil
-		}
-		if t == "fusion" {
-			prod = domain.ProductFusion
+		switch {
+		case r.overview.terms[t]:
+			mentions = true
+			if t == "fusion" {
+				prod = domain.ProductFusion
+			}
+		case t != "go":
+			only = false
 		}
 	}
-	return r.overview.pages[prod]
+	if !mentions {
+		return false, nil, false
+	}
+	return true, r.overview.pages[prod], only
 }
 
 // Retrieve searches with q plus any extra (rewritten) query strings.
@@ -147,8 +160,13 @@ func (r *Retriever) Retrieve(ctx context.Context, q domain.Query, extra []string
 		}
 	}
 	ret.Hits = Fuse(lists, r.chunks, q, tuning.Candidates, r.deprecated)
-	if pins := r.overviewFor(q); len(pins) > 0 {
-		ret.Hits = pinFirst(ret.Hits, pins, tuning.Candidates)
+	mentions, pages, only := r.overviewFor(q)
+	ret.MentionsProduct = mentions
+	switch {
+	case only && len(pages) > 0:
+		ret.Hits = pinFirst(ret.Hits, pages, tuning.Candidates)
+	case mentions && len(pages) > 0:
+		ret.Hits, ret.Extra = ensureInTop(ret.Hits, pages[0], tuning.TopK)
 	}
 	return ret
 }
@@ -170,6 +188,26 @@ func pinFirst(hits []domain.Hit, pins []int, limit int) []domain.Hit {
 		}
 	}
 	return out
+}
+
+// ensureInTop makes sure chunk id is among the passages the LLM sees. If it
+// is not in the first k hits, it is added right after them (position k+1)
+// and extra = 1, so the caller sends k+1 passages and none is pushed out.
+func ensureInTop(hits []domain.Hit, id, k int) (out []domain.Hit, extra int) {
+	for i, h := range hits {
+		if h.ChunkID == id {
+			if i < k {
+				return hits, 0
+			}
+			hits = append(hits[:i:i], hits[i+1:]...)
+			break
+		}
+	}
+	pos := min(k, len(hits))
+	out = make([]domain.Hit, 0, len(hits)+1)
+	out = append(out, hits[:pos]...)
+	out = append(out, domain.Hit{ChunkID: id})
+	return append(out, hits[pos:]...), 1
 }
 
 // Prep returns the query preparer.
