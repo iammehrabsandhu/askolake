@@ -1,0 +1,37 @@
+# Every turnable knob with its compiled-in default (internal/tuning).
+# Copy to a new file, keep only what you change, run: testing/run.sh -knobs <file>
+# Seed-time knobs only take effect together with -reseed.
+
+# --- query time (instant) ---
+Candidates: 30
+TopK: 14
+RerankTopK: 8
+RRFK: 60
+PerPageCap: 3
+NearDupJaccard: 1
+TitleWeight: 2.5
+BM25K1: 1.2
+BM25B: 0.3
+SynonymWeight: 0.5
+MaxQueryTerms: 64
+ProductBoost: 1.3
+DeprecatedPenalty: 0.5
+LowValuePenalty: 0.3
+FloorCoverage: 0.6
+FloorCosine: 0.5
+WeakCoverage: 0.5
+ContextCharsPerChunk: 2400
+SourceWeight.code: 0.8
+SourceWeight.docs: 1
+SourceWeight.external: 0.7
+SourceWeight.issue: 0.6
+SourceWeight.repo: 0.85
+
+# --- seed time (needs -reseed) ---
+ChunkMaxWords: 350
+ChunkOverlapWords: 40
+ChunkMinWords: 8
+ChunkMergeWords: 60
+PieceWords: 120
+PieceOverlapWords: 20
+ExternalMaxChunks: 60

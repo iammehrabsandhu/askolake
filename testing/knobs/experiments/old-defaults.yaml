@@ -1,0 +1,3 @@
+# Ranking before the 2026-10-18 fixes (seed-time fixes are not knobs).
+BM25B: 0.75
+PerPageCap: 2

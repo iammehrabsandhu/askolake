@@ -1,0 +1,3 @@
+# Smaller chunks. Seed-time: run with -reseed.
+ChunkMaxWords: 250
+ChunkMergeWords: 40

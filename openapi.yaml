@@ -1,0 +1,411 @@
+openapi: 3.0.3
+info:
+  title: olake-ask API
+  version: 1.0.0
+  description: |
+    Question answering over the OLake and OLake Fusion documentation and open-source repositories.
+    Answers are generated only from indexed content and cite their sources with `[n]` markers,
+    where `n` is the 1-based index into `sources`.
+
+    **Answer modes.** Every accepted question returns HTTP 200; the outcome is in the `X-Ask-Mode` header:
+
+    | Mode | Meaning | `sources` |
+    |---|---|---|
+    | `answered` | LLM answer, verified to cite only retrieved passages | non-empty |
+    | `search_only` | No LLM available (not configured, budget exhausted, or LLM error): the most relevant sections are listed with `[n]` markers | non-empty |
+    | `dont_know` | Retrieved content does not support an answer; may list related pages | empty |
+    | `refused` | Off-topic, prompt-injection, or too-short question | empty |
+
+    **Single-turn.** Each request is independent; no history is kept.
+
+    **Processing order for `POST /ask`:** body size check (`Content-Length`) → rate limit → JSON parse and
+    validation → answer. So a client over its rate limit gets `429` even for an invalid body.
+
+    **Rate limits** (per server instance, in memory): 10 requests/minute per client IP with a burst of 5,
+    plus a global 120 requests/minute with a burst of 20. Client IP is taken from `CF-Connecting-IP`,
+    then `True-Client-IP`, then the rightmost valid `X-Forwarded-For` entry, then the TCP peer.
+
+    **CORS.** Browser calls are allowed only from origins in the server's `ALLOWED_ORIGINS` setting
+    (default `https://olake.io`, `http://localhost:*`, `http://127.0.0.1:*`). Allowed origins receive
+    `Access-Control-Allow-Origin` (echoing the origin), `Access-Control-Allow-Methods: GET, POST, OPTIONS`,
+    `Access-Control-Allow-Headers: Content-Type, X-Request-ID` and `Access-Control-Max-Age: 600`.
+    Disallowed origins get no CORS headers (the request is still processed). Every response carries `Vary: Origin`.
+
+    **Tracing.** Every response carries `X-Request-ID`: the caller's value when it matches
+    `^[A-Za-z0-9-]{1,64}$`, otherwise a generated 16-hex-character id.
+
+    **Unknown routes and wrong methods** (e.g. `GET /ask`, `HEAD /widget.js`) return `404 {"error":"not found"}`.
+    `OPTIONS` on any path returns `204`.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: http://localhost:8080
+    description: Local (`make run`)
+  - url: https://{host}
+    description: Deployed instance (Render or a tunnel)
+    variables:
+      host:
+        default: olake-ask.onrender.com
+        description: Public hostname of the deployment
+tags:
+  - name: ask
+    description: Question answering
+  - name: ops
+    description: Health and service info
+  - name: widget
+    description: Embeddable chat widget
+
+paths:
+  /ask:
+    post:
+      tags: [ask]
+      operationId: askQuestion
+      summary: Ask a question about OLake or OLake Fusion
+      description: |
+        The body is limited to 16 KiB. The `Content-Type` header is not enforced, and unknown body fields are ignored.
+        `question` is trimmed before validation and must then be 1–2000 characters (Unicode code points).
+        Questions shorter than 3 characters after trimming are accepted but return mode `refused`.
+        The server stops working on a question after 45 s and still returns 200 (usually `search_only`).
+        Responses for mode `answered` are cached for 24 h per normalized question.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+            examples:
+              cdc:
+                summary: Typical question
+                value:
+                  question: How do I set up CDC for Postgres?
+      responses:
+        '200':
+          description: Question accepted. The outcome is in `X-Ask-Mode`.
+          headers:
+            X-Ask-Mode:
+              $ref: '#/components/headers/XAskMode'
+            X-Index-Version:
+              $ref: '#/components/headers/XIndexVersion'
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskResponse'
+              examples:
+                answered:
+                  summary: answered (illustrative)
+                  value:
+                    answer: "OLake reads Postgres changes through logical replication with the native pgoutput plugin [1].\n1. Set `wal_level = logical` and restart the server [1].\n2. Create a publication and a logical replication slot for the tables you want to sync [1].\n3. In the OLake UI, enable CDC in the Postgres source configuration [2]."
+                    sources:
+                      - https://olake.io/docs/connectors/postgres/setup/generic/
+                      - https://olake.io/docs/connectors/postgres/#2-provide-configuration-details
+                search_only:
+                  summary: search_only (captured, truncated to 2 hits)
+                  value:
+                    answer: "I can't generate a full answer right now, but these sections look most relevant:\n1. Generic PostgreSQL CDC Setup Guide — This guide covers setting up Change Data Capture (CDC) for PostgreSQL running on any server infrastructure including EC2 instances, virtual machines, bare metal servers, or on-premises installations. The setup uses … [1]\n2. Amazon RDS PostgreSQL CDC Setup Guide — This guide walks you through setting up Change Data Capture (CDC) for Amazon RDS PostgreSQL instances using logical replication with the native pgoutput plugin and a PostgreSQL publication for real-time … [2]"
+                    sources:
+                      - https://olake.io/docs/connectors/postgres/setup/generic/
+                      - https://olake.io/docs/connectors/postgres/setup/rds/
+                dont_know:
+                  summary: dont_know (captured)
+                  value:
+                    answer: "I don't know. I couldn't find this in the OLake documentation or repositories.\n\nYou can ask the OLake community on Slack (https://olake.io/slack/) or open an issue at https://github.com/datazip-inc/olake/issues."
+                    sources: []
+                refused:
+                  summary: refused, off-topic or injection (captured)
+                  value:
+                    answer: "I can only help with questions about OLake and OLake Fusion: setup, sources, sync modes, catalogs, table maintenance, deployment and troubleshooting."
+                    sources: []
+                refused_too_short:
+                  summary: refused, question under 3 characters (captured)
+                  value:
+                    answer: Please ask a complete question about OLake or OLake Fusion.
+                    sources: []
+        '400':
+          description: Malformed body or invalid `question`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json:
+                  summary: Body is not JSON, or `question` is not a string
+                  value: {error: invalid JSON body}
+                missing:
+                  summary: "`question` missing, null, or whitespace only"
+                  value: {error: question is required}
+                too_long:
+                  summary: "`question` over 2000 characters after trimming"
+                  value: {error: question too long (max 2000 characters)}
+        '413':
+          description: Body larger than 16 KiB (16384 bytes).
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example: {error: request too large}
+        '429':
+          description: Per-IP or global rate limit exceeded.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
+                enum: [60]
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example: {error: Too many questions. Please wait a minute and try again.}
+        '500':
+          $ref: '#/components/responses/InternalError'
+    options:
+      tags: [ask]
+      operationId: askPreflight
+      summary: CORS preflight
+      description: Always returns 204. CORS headers are present only when `Origin` is allowed.
+      parameters:
+        - name: Origin
+          in: header
+          required: false
+          schema:
+            type: string
+          example: https://olake.io
+        - name: Access-Control-Request-Method
+          in: header
+          required: false
+          schema:
+            type: string
+          example: POST
+      responses:
+        '204':
+          description: Preflight accepted.
+          headers:
+            Access-Control-Allow-Origin:
+              description: The request `Origin`, echoed back. Present only for allowed origins.
+              schema:
+                type: string
+            Access-Control-Allow-Methods:
+              description: Present only for allowed origins.
+              schema:
+                type: string
+                enum: ['GET, POST, OPTIONS']
+            Access-Control-Allow-Headers:
+              description: Present only for allowed origins.
+              schema:
+                type: string
+                enum: ['Content-Type, X-Request-ID']
+            Access-Control-Max-Age:
+              description: Present only for allowed origins.
+              schema:
+                type: integer
+                enum: [600]
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: getHealth
+      summary: Health and index information
+      description: |
+        Always 200 while the process is running; it never reports the LLM as unhealthy.
+        Check `llm` to confirm answers can be generated (otherwise every answer is `search_only`).
+      responses:
+        '200':
+          description: Service is up.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                index_version: 20261017T1825Z-1fd854b1
+                chunks: 3404
+                vectors: true
+                llm: false
+    head:
+      tags: [ops]
+      operationId: headHealth
+      summary: Health check without body (for uptime monitors)
+      responses:
+        '200':
+          description: Service is up. No body and no `Content-Type`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+
+  /:
+    get:
+      tags: [ops]
+      operationId: getRoot
+      summary: Service banner
+      responses:
+        '200':
+          description: Plain-text banner.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum: [Ask OLake API. POST /ask]
+    head:
+      tags: [ops]
+      operationId: headRoot
+      summary: Service banner without body
+      responses:
+        '200':
+          description: No body; `Content-Type` is `text/plain; charset=utf-8`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+
+  /widget.js:
+    get:
+      tags: [widget]
+      operationId: getWidget
+      summary: Embeddable chat widget script
+      description: |
+        Vanilla JavaScript, no dependencies. Embed with
+        `<script src="https://<host>/widget.js" data-api-url="https://<host>" defer></script>`.
+        `data-api-url` defaults to the script's origin; `data-title` defaults to `Ask OLake`. `HEAD` is not supported (404).
+      responses:
+        '200':
+          description: The widget script.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: ['public, max-age=3600']
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/javascript:
+              schema:
+                type: string
+
+components:
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Optional trace id, echoed back if it matches the pattern; otherwise replaced.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9-]{1,64}$'
+      example: my-trace-1
+
+  headers:
+    XRequestId:
+      description: Request id (caller-supplied if valid, else 16 generated hex characters).
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9-]{1,64}$'
+    XAskMode:
+      description: How the question was handled.
+      schema:
+        $ref: '#/components/schemas/AskMode'
+    XIndexVersion:
+      description: Version of the index bundle compiled into the server.
+      schema:
+        $ref: '#/components/schemas/IndexVersion'
+
+  responses:
+    InternalError:
+      description: Unexpected server error (panic recovered and logged).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example: {error: internal error}
+
+  schemas:
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Limits apply after trimming whitespace; length counts Unicode characters.
+          example: How do I set up CDC for Postgres?
+      additionalProperties: true
+
+    AskResponse:
+      type: object
+      description: Exactly these two keys, always present.
+      required: [answer, sources]
+      additionalProperties: false
+      properties:
+        answer:
+          type: string
+          description: Plain text with light Markdown (lists, `code`, fenced code, links). `[n]` markers refer to `sources[n-1]`.
+        sources:
+          type: array
+          description: Cited URLs in order of first citation. Never null; empty for `dont_know` and `refused`.
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+
+    AskMode:
+      type: string
+      enum: [answered, search_only, dont_know, refused]
+
+    IndexVersion:
+      type: string
+      description: Build timestamp (UTC) plus the first 8 hex characters of the chunk file's SHA-256.
+      pattern: '^[0-9]{8}T[0-9]{4}Z-[0-9a-f]{8}$'
+      example: 20261017T1825Z-1fd854b1
+
+    HealthResponse:
+      type: object
+      required: [status, index_version, chunks, vectors, llm]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        index_version:
+          $ref: '#/components/schemas/IndexVersion'
+        chunks:
+          type: integer
+          minimum: 0
+          description: Number of indexed chunks.
+        vectors:
+          type: boolean
+          description: Vector search is active (embedder loaded and dimensions match the bundle).
+        llm:
+          type: boolean
+          description: An LLM is configured. When false, every answer is `search_only`.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: Human-readable message, safe to show to end users.

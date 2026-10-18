@@ -1,0 +1,2 @@
+# Collapse near-duplicate sections from sibling pages (token-set Jaccard).
+NearDupJaccard: 0.8
