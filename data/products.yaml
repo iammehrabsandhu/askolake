@@ -1,0 +1,7 @@
+url_rules:          # first matching substring wins (checked against chunk URL)
+  - {contains: "olake.io/docs/fusion/", product: fusion}
+  - {contains: "github.com/datazip-inc/olake-fusion", product: fusion}
+default: olake      # applies to olake.io + datazip-inc URLs not matched above; external pages use their sources.yaml product
+query_terms:
+  fusion: [fusion, compaction, self-optimizing, optimizer, optimizing, table maintenance, maintenance, expire snapshots, orphan files, small files, amoro, ams]
+  olake: [sync, cdc, source, connector, ingestion, replication, olake ui, job, stream, postgres, mysql, mongodb, oracle, mssql, db2, kafka, full refresh, incremental, writer, destination]

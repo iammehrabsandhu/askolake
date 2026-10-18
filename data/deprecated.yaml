@@ -1,0 +1,20 @@
+- term: wal2json
+  note: "OLake has deprecated wal2json-based CDC; use the native pgoutput plugin."
+  url: https://olake.io/docs/connectors/postgres/
+  pages: ["/docs/connectors/postgres/wal2json"]
+- term: jobMapping
+  note: "The legacy global.jobMapping Helm setting is deprecated and will be removed; migrate to the newer job scheduling configuration."
+  url: https://olake.io/docs/install/kubernetes/
+  pages: []
+- term: NFS
+  note: "NFS log storage (logFileStorageMode: nfs) is deprecated and will be removed at the end of 2026; S3 becomes the default."
+  url: https://olake.io/docs/install/kubernetes/
+  pages: []
+- term: Single Server
+  note: "Azure Database Single Server is being deprecated; migrate to Flexible Server for full CDC support."
+  url: https://olake.io/docs/connectors/postgres/
+  pages: []
+- term: Elasticsearch
+  note: "Elasticsearch for Temporal workflow data is legacy-only and deprecated in new installations."
+  url: https://olake.io/docs/install/olake-ui/
+  pages: []

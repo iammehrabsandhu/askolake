@@ -1,0 +1,16 @@
+.work/
+assets/index.tmp/
+.env
+/olake-ask
+*.test
+eval/report.md
+testing/runs/
+
+# local notes / scratch (not part of the project)
+.claude/
+.DS_Store
+commands.md
+commt.txt
+context.md
+instruct.md
+olake-ask-implementation-plan.md

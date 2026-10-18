@@ -1,0 +1,64 @@
+docs:
+  sitemap: https://olake.io/sitemap.xml
+  include_prefixes:
+    - https://olake.io/docs/
+  exclude_substrings:
+    - /docs/tags/
+    - /docs/drafts/
+    - /docs/archive/
+repos:
+  - name: olake
+    url: https://github.com/datazip-inc/olake
+    ref: master
+    product: olake
+    markdown: ["**/*.md"]
+    exclude: [".github/**", "**/CONTRIBUTING.md", "**/CHANGELOG.md", "**/node_modules/**", "**/vendor/**"]
+    values_yaml: []
+    errors: true
+  - name: olake-ui
+    url: https://github.com/datazip-inc/olake-ui
+    ref: master
+    product: olake
+    markdown: ["**/*.md"]
+    exclude: [".github/**", "**/CONTRIBUTING.md", "**/CHANGELOG.md", "**/node_modules/**", "**/vendor/**"]
+    values_yaml: []
+    errors: true
+  - name: olake-helm
+    url: https://github.com/datazip-inc/olake-helm
+    ref: master
+    product: olake
+    markdown: ["**/*.md"]
+    exclude: [".github/**", "**/CONTRIBUTING.md", "**/CHANGELOG.md"]
+    values_yaml: ["helm/olake/values.yaml"]
+    errors: true
+  - name: olake-fusion
+    url: https://github.com/datazip-inc/olake-fusion
+    ref: master
+    product: fusion
+    markdown: ["README.md", "docs/**/*.md"]
+    exclude: ["docs/images/**"]
+    values_yaml: []
+    errors: false
+external:
+  - {url: "https://iceberg.apache.org/docs/latest/maintenance/", product: ""}
+  - {url: "https://iceberg.apache.org/docs/latest/configuration/", product: ""}
+  - {url: "https://iceberg.apache.org/docs/latest/evolution/", product: ""}
+  - {url: "https://iceberg.apache.org/docs/latest/partitioning/", product: ""}
+  - {url: "https://www.postgresql.org/docs/current/logical-replication.html", product: olake}
+  - {url: "https://www.postgresql.org/docs/current/logicaldecoding-explanation.html", product: olake}
+  - {url: "https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html", product: olake}
+  - {url: "https://www.mongodb.com/docs/manual/changeStreams/", product: olake}
+  - {url: "https://www.mongodb.com/docs/manual/core/replica-set-oplog/", product: olake}
+  - {url: "https://olake.io/blog/olake-architecture-deep-dive/", product: olake, source: docs}
+issues:
+  repos: [datazip-inc/olake, datazip-inc/olake-ui, datazip-inc/olake-helm, datazip-inc/olake-fusion]
+  max_per_repo: 300
+community:
+  slack: https://olake.io/slack/
+  issues: https://github.com/datazip-inc/olake/issues
+# Sections that match almost any question but answer none (generic "about
+# OLake" text); search down-ranks them (tuning.LowValuePenalty).
+low_value:
+  - /docs/community/contributing/#orientation
+  - /docs/community/learning-modules/
+  - /blog/olake-architecture-deep-dive/#wrapping-up
