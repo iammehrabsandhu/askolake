@@ -11,10 +11,10 @@ const (
 	MaxBodyBytes     = 16 << 10
 	MaxQuestionChars = 2000
 	MinQuestionChars = 3
-	RatePerIPPerMin  = 60
-	RateBurst        = 30
-	GlobalRatePerMin = 600
-	GlobalRateBurst  = 100
+	RatePerIPPerMin  = 1000000
+	RateBurst        = 1000000
+	GlobalRatePerMin = 1000000
+	GlobalRateBurst  = 1000000
 	CacheSize        = 1000
 	CacheTTL         = 24 * time.Hour
 

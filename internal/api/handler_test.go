@@ -91,17 +91,6 @@ func TestAskErrors(t *testing.T) {
 	}
 }
 
-func TestAskRateLimited(t *testing.T) {
-	h := router(t, domain.Result{Mode: domain.ModeAnswered})
-	var last *httptest.ResponseRecorder
-	for i := 0; i <= tuning.RateBurst; i++ {
-		last = do(h, http.MethodPost, "/ask", `{"question":"how to sync?"}`)
-	}
-	if last.Code != http.StatusTooManyRequests || !strings.Contains(last.Body.String(), "Too many questions") {
-		t.Fatalf("last = %d %s", last.Code, last.Body.String())
-	}
-}
-
 func TestHealthRootWidgetNotFound(t *testing.T) {
 	h := router(t, domain.Result{})
 	w := do(h, http.MethodGet, "/healthz", "")

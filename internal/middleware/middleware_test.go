@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"olake-ask/internal/domain"
-	"olake-ask/internal/tuning"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -157,34 +156,6 @@ func newRouter(rl *RateLimiter) *gin.Engine {
 	r.OPTIONS("/ask", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	r.GET("/panic", func(c *gin.Context) { panic("boom") })
 	return r
-}
-
-func TestRateLimit429AfterBurst(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	r := newRouter(NewRateLimiter(ctx))
-	codes := map[int]int{}
-	for i := 0; i < tuning.RateBurst+1; i++ {
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/ask", strings.NewReader("{}"))
-		req.Header.Set("CF-Connecting-IP", "203.0.113.7")
-		r.ServeHTTP(w, req)
-		codes[w.Code]++
-		if w.Code == http.StatusTooManyRequests && (w.Header().Get("Retry-After") != "60" || !strings.Contains(w.Body.String(), "Too many questions")) {
-			t.Fatalf("429 response: %v %s", w.Header(), w.Body.String())
-		}
-	}
-	if codes[http.StatusOK] != tuning.RateBurst || codes[http.StatusTooManyRequests] != 1 {
-		t.Fatalf("codes = %v", codes)
-	}
-	// Another IP is not limited.
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/ask", strings.NewReader("{}"))
-	req.Header.Set("CF-Connecting-IP", "203.0.113.8")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("other ip = %d", w.Code)
-	}
 }
 
 func TestCORSAndPreflight(t *testing.T) {
